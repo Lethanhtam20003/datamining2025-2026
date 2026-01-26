@@ -12,7 +12,6 @@ import re
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from underthesea import word_tokenize
-import emoji
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
@@ -33,10 +32,22 @@ NEU_EMOJIS = ['😐', '😶', '🤔', '🧐', '😬', '😑', '🤫']
 
 # ================= SLANG DICTIONARY =================
 SLANG_DICT = {
+    # Slang tiếng Việt
     "k": "không", "ko": "không", "kh": "không", "v": "vậy",
     "đc": "được", "dc": "được", "r": "rồi", "s": "sao",
     "mn": "mọi người", "ae": "anh em", "mìh": "mình", "mik": "mình",
-    "tr": "trời", "j": "gì", "bt": "biết", "kb": "không biết", "h": "giờ"
+    "tr": "trời", "j": "gì", "bt": "biết", "kb": "không biết", "h": "giờ",
+    # Từ tiếng Anh biểu cảm -> Tiếng Việt
+    "good": "tốt", "great": "tuyệt", "awesome": "tuyệt_vời", "excellent": "xuất_sắc",
+    "bad": "tệ", "sucks": "tệ", "terrible": "tồi_tệ", "worst": "tồi_tệ",
+    "like": "thích", "love": "yêu", "hate": "ghét", "dislike": "không_thích",
+    "nice": "tốt", "cool": "ngầu", "chill": "thoải_mái", "fun": "vui",
+    "boring": "nhàm_chán", "sad": "buồn", "happy": "vui", "excited": "hào_hứng",
+    "amazing": "kinh_ngạc", "wonderful": "tuyệt_vời", "fantastic": "tuyệt_vời",
+    "horrible": "kinh_khủng", "awful": "tồi_tệ", "disgusting": "ghê_tởm",
+    "perfect": "hoàn_hảo", "super": "siêu", "best": "tốt_nhất",
+    "okay": "ổn", "ok": "ổn", "fine": "tốt", "alright": "ổn",
+    "shit": "tệ", "damn": "chết_tiệt", "fuck": "chết_tiệt"
 }
 
 
@@ -109,6 +120,49 @@ def remove_stopwords(text):
     words = [w for w in words if w not in STOPWORDS]
     return " ".join(words)
 
+# ================= LABELING HEURISTIC =================
+POS_WORDS = ["tốt", "hay", "thích", "tuyệt", "love", "good", "nice", "excellent", "tuyệt_vời", "ưng", "ok", "oki", "tuyệt", "hài_lòng", "ưng_ý"]
+NEG_WORDS = ["tệ", "dở", "ghét", "kém", "bad", "hate", "worst", "terrible", "chán", "buồn", "không_thích", "tồi_tệ", "không_hài_lòng"]
+
+def assign_label(row):
+    """
+    Gán nhãn dựa trên heuristic: emoji > từ khóa + xử lý phủ định
+    1 = Khen, 0 = Chê, 2 = Trung tính
+    """
+    # Ưu tiên emoji
+    if row['num_emoji_pos'] > 0:
+        return 1  # Khen
+    elif row['num_emoji_neg'] > 0:
+        return 0  # Chê
+    elif row['num_emoji_neu'] > 0:
+        return 2  # Trung tính
+    
+    # Nếu không có emoji, kiểm tra từ khóa với xử lý phủ định
+    text = str(row['cleaned_text']).lower()
+    
+    # Tách từ
+    words = text.split()
+    
+    # Kiểm tra bigram phủ định
+    negation_words = ["không", "không_thích", "chẳng", "chưa", "ko"]
+    pos_words = ["tốt", "hay", "thích", "tuyệt", "tuyệt_vời", "ưng", "ổn", "xuất_sắc", "hoàn_hảo"]
+    neg_words = ["tệ", "dở", "ghét", "kém", "tồi_tệ", "nhàm_chán", "buồn", "ghê_tởm"]
+    
+    # Kiểm tra phủ định + từ tích cực = tiêu cực
+    for i in range(len(words) - 1):
+        if words[i] in negation_words and words[i+1] in pos_words:
+            return 0  # Chê (không tốt = tệ)
+        if words[i] in negation_words and words[i+1] in neg_words:
+            return 1  # Khen (không tệ = tốt)
+    
+    # Kiểm tra từ khóa đơn giản
+    if any(word in pos_words for word in words):
+        return 1
+    elif any(word in neg_words for word in words):
+        return 0
+    else:
+        return 2  # Mặc định trung tính
+
 # ================= MAIN =================
 if __name__ == "__main__":
     df = load_data("comments.csv")
@@ -133,21 +187,25 @@ if __name__ == "__main__":
     # Bước d: Loại bỏ Stopwords
     df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)
 
-    # 4. Vector hóa văn bản bằng TF-IDF
+    # 4. Gán nhãn (Labeling)
+    df['label'] = df.apply(assign_label, axis=1)
+
+    # 5. Vector hóa văn bản bằng TF-IDF
     tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=2, max_df=0.9)
     X_tfidf = tfidf.fit_transform(df['cleaned_text']).toarray()
 
-    # 5. CHUẨN HÓA (NORMALIZATION) - Bước tối ưu quan trọng 
+    # 6. CHUẨN HÓA (NORMALIZATION) - Bước tối ưu quan trọng 
     # Đưa các cột số lượng emoji về cùng thang đo [0, 1] như TF-IDF
     scaler = MinMaxScaler()
     emoji_numeric = df[['num_emoji_pos', 'num_emoji_neg', 'num_emoji_neu']].values
     emoji_scaled = scaler.fit_transform(emoji_numeric)
 
-    # 6. TÍCH HỢP DỮ LIỆU (Data Integration) 
+    # 7. TÍCH HỢP DỮ LIỆU (Data Integration) 
     # Kết hợp vector từ vựng và vector emoji đã chuẩn hóa
     X_final = np.hstack([X_tfidf, emoji_scaled])
 
     print("Kích thước đặc trưng cuối cùng:", X_final.shape)
+    print("Phân bố nhãn:", df['label'].value_counts())
     df.to_csv("comments_final_optimized.csv", index=False, encoding='utf-8-sig')    # ================= LABELING HEURISTIC =================
     POS_WORDS = ["tốt", "hay", "thích", "tuyệt", "love", "good", "nice", "excellent", "tuyệt_vời", "ưng", "ok", "oki"]
     NEG_WORDS = ["tệ", "dở", "ghét", "kém", "bad", "hate", "worst", "terrible", "chán", "buồn", "không_thích"]
