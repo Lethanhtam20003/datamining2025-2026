@@ -4,7 +4,8 @@ from googleapiclient.discovery import build
 # ================= CẤU HÌNH =================
 DEVELOPER_KEY = "AIzaSyBosShK5z9bqY6OUzmbHZRbxlHSeKYvha4"
 
-VIDEO_ID = "l4Pkem30Q60" 
+VIDEO_ID = "nZtFlrwCbs4" 
+
 
 CSV_FILE_NAME = "comments.csv"
 # ============================================

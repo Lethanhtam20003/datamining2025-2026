@@ -12,13 +12,15 @@ import re
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from underthesea import word_tokenize
-
+import emoji
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import classification_report, confusion_matrix
 
 # ================= STOPWORDS TIẾNG VIỆT =================
-STOPWORDS = set([
-    "là", "của", "và", "nhưng", "đã", "đang", "sẽ", "cũng", "cho", "rằng",
-    "những", "cái", "con", "thì", "mà", "lại", "với", "tại", "này", "vậy", "ơi", "ạ"
-])
+with open('stopWords_vietnamese.txt', 'r', encoding='utf-8') as f:
+    STOPWORDS = set(line.strip() for line in f if line.strip())
 
 # ================= EMOJI GROUPS =================
 POS_EMOJIS = [
@@ -47,28 +49,6 @@ def load_data(file_path):
     df.dropna(subset=['Text'], inplace=True)
     return df
 
-
-def extract_emoji(text, emoji_list):
-    """
-    Trích xuất emoji thuộc một nhóm nhất định từ văn bản
-    Dùng để tạo feature: emoji_pos, emoji_neg, emoji_neu
-    """
-    if not isinstance(text, str):
-        return ""
-    return "".join([c for c in text if c in emoji_list])
-
-
-def convert_slang(text):
-    """
-    Chuyển đổi slang (ngôn ngữ chat) sang tiếng Việt chuẩn
-    Ví dụ: 'ko bt j' -> 'không biết gì'
-    """
-    if not isinstance(text, str):
-        return ""
-    words = text.split()
-    return " ".join([SLANG_DICT.get(w, w) for w in words])
-
-
 def clean_text(text):
     """
     Làm sạch văn bản:
@@ -91,6 +71,24 @@ def clean_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
+def extract_emoji(text, emoji_list):
+    """
+    Trích xuất emoji thuộc một nhóm nhất định từ văn bản
+    Dùng để tạo feature: emoji_pos, emoji_neg, emoji_neu
+    """
+    if not isinstance(text, str):
+        return ""
+    return "".join([c for c in text if c in emoji_list])
+
+def convert_slang(text):
+    """
+    Chuyển đổi slang (ngôn ngữ chat) sang tiếng Việt chuẩn
+    Ví dụ: 'ko bt j' -> 'không biết gì'
+    """
+    if not isinstance(text, str):
+        return ""
+    words = text.split()
+    return " ".join([SLANG_DICT.get(w, w) for w in words])
 
 def tokenize_vietnamese(text):
     """
@@ -100,7 +98,6 @@ def tokenize_vietnamese(text):
     if not isinstance(text, str):
         return ""
     return word_tokenize(text, format="text")
-
 
 def remove_stopwords(text):
     """
@@ -112,54 +109,88 @@ def remove_stopwords(text):
     words = [w for w in words if w not in STOPWORDS]
     return " ".join(words)
 
-
 # ================= MAIN =================
 if __name__ == "__main__":
-    # Load dữ liệu
     df = load_data("comments.csv")
 
-    # Trích xuất đặc trưng emoji
+    # 1. Trích xuất đặc trưng Emoji (Phải làm TRƯỚC khi clean_text xóa ký tự đặc biệt)
     df['emoji_pos'] = df['Text'].apply(lambda x: extract_emoji(x, POS_EMOJIS))
     df['emoji_neg'] = df['Text'].apply(lambda x: extract_emoji(x, NEG_EMOJIS))
     df['emoji_neu'] = df['Text'].apply(lambda x: extract_emoji(x, NEU_EMOJIS))
-
-    # Làm phẳng văn bản gốc
-    df['Text'] = df['Text'].apply(
-        lambda x: x.replace('\n', ' ').replace('\r', ' ') if isinstance(x, str) else x
-    )
-
-    # ===== PIPELINE TIỀN XỬ LÝ =====
-    df['cleaned_text'] = df['Text'].apply(convert_slang)
-    df['cleaned_text'] = df['cleaned_text'].apply(clean_text)
-    df['cleaned_text'] = df['cleaned_text'].apply(tokenize_vietnamese)
-    df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)
-
-    # ================= TF-IDF =================
-    tfidf = TfidfVectorizer(
-        max_features=5000,
-        ngram_range=(1, 2),
-        min_df=2,
-        max_df=0.9
-    )
-
-    X_tfidf = tfidf.fit_transform(df['cleaned_text'])
-    print("Kích thước TF-IDF:", X_tfidf.shape)
-
-    # ================= EMOJI NUMERIC FEATURES =================
+    
+    # 2. Tính toán đặc trưng số (Numeric Features)
     df['num_emoji_pos'] = df['emoji_pos'].apply(len)
     df['num_emoji_neg'] = df['emoji_neg'].apply(len)
     df['num_emoji_neu'] = df['emoji_neu'].apply(len)
 
-    # ================= FINAL FEATURE MATRIX =================
-    X_final = np.hstack([
-        X_tfidf.toarray(),
-        df[['num_emoji_pos', 'num_emoji_neg', 'num_emoji_neu']].values
-    ])
+    # 3. Pipeline Tiền xử lý văn bản (Thứ tự tối ưu)
+    # Bước a: Xử lý slang trước để chuẩn hóa từ ngữ cho underthesea
+    df['cleaned_text'] = df['Text'].apply(convert_slang)
+    # Bước b: Làm sạch (Xóa URL, HTML, ký tự đặc biệt...)
+    df['cleaned_text'] = df['cleaned_text'].apply(clean_text)
+    # Bước c: Tách từ tiếng Việt 
+    df['cleaned_text'] = df['cleaned_text'].apply(tokenize_vietnamese)
+    # Bước d: Loại bỏ Stopwords
+    df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)
 
-    print("Kích thước feature cuối cùng:", X_final.shape)
+    # 4. Vector hóa văn bản bằng TF-IDF
+    tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=2, max_df=0.9)
+    X_tfidf = tfidf.fit_transform(df['cleaned_text']).toarray()
 
-    # ================= SAVE FILE =================
-    output_name = "comments_final_excel.csv"
-    df.to_csv(output_name, index=False, encoding='utf-8-sig')
+    # 5. CHUẨN HÓA (NORMALIZATION) - Bước tối ưu quan trọng 
+    # Đưa các cột số lượng emoji về cùng thang đo [0, 1] như TF-IDF
+    scaler = MinMaxScaler()
+    emoji_numeric = df[['num_emoji_pos', 'num_emoji_neg', 'num_emoji_neu']].values
+    emoji_scaled = scaler.fit_transform(emoji_numeric)
 
-    print(f"Hoàn thành File '{output_name}' đã sẵn sàng.")
+    # 6. TÍCH HỢP DỮ LIỆU (Data Integration) 
+    # Kết hợp vector từ vựng và vector emoji đã chuẩn hóa
+    X_final = np.hstack([X_tfidf, emoji_scaled])
+
+    print("Kích thước đặc trưng cuối cùng:", X_final.shape)
+    df.to_csv("comments_final_optimized.csv", index=False, encoding='utf-8-sig')    # ================= LABELING HEURISTIC =================
+    POS_WORDS = ["tốt", "hay", "thích", "tuyệt", "love", "good", "nice", "excellent", "tuyệt_vời", "ưng", "ok", "oki"]
+    NEG_WORDS = ["tệ", "dở", "ghét", "kém", "bad", "hate", "worst", "terrible", "chán", "buồn", "không_thích"]
+    
+    def assign_label(row):
+        """
+        Gán nhãn dựa trên heuristic: emoji > từ khóa
+        """
+        # Ưu tiên emoji
+        if row['num_emoji_pos'] > 0:
+            return 1  # Khen
+        elif row['num_emoji_neg'] > 0:
+            return 0  # Chê
+        elif row['num_emoji_neu'] > 0:
+            return 2  # Trung tính
+        
+        # Nếu không có emoji, kiểm tra từ khóa
+        text = row['cleaned_text'].lower()
+        if any(word in text for word in POS_WORDS):
+            return 1
+        elif any(word in text for word in NEG_WORDS):
+            return 0
+        else:
+            return 2  # Mặc định trung tính
+    
+    # Thêm vào pipeline chính:
+    df['label'] = df.apply(assign_label, axis=1)    
+    
+    # Sau khi có nhãn và X_final
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_final, df['label'], test_size=0.2, random_state=42, stratify=df['label']
+    )
+    print(f"Train size: {X_train.shape}, Test size: {X_test.shape}")
+
+    # Huấn luyện
+    nb_model = MultinomialNB(alpha=1.0)  # Laplace smoothing
+    nb_model.fit(X_train, y_train)
+
+    # Dự đoán
+    y_pred = nb_model.predict(X_test)
+
+    # Đánh giá cơ bản
+    print("Confusion Matrix:")
+    print(confusion_matrix(y_test, y_pred))
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=['Chê (0)', 'Khen (1)', 'Trung tính (2)']))
