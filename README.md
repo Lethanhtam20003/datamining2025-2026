@@ -35,6 +35,7 @@ Dự án này triển khai hệ thống phân tích cảm xúc từ bình luận
 
 #### 2.3 Tokenization & Stopwords
 - **Tách từ**: Sử dụng underthesea để tách từ tiếng Việt
+- **Negation Transformation**: Ghép từ phủ định với từ tiếp theo (ví dụ: "không hài_lòng" → "không_hài_lòng")
 - **Loại stopwords**: Sử dụng danh sách 1943 từ từ file `stopWords_vietnamese.txt`
 
 #### 2.4 Vector hóa
@@ -89,6 +90,7 @@ Actual
 
 ### Xử Lý Ngôn Ngữ
 - **Slang Dictionary**: 35+ từ tiếng Anh + slang tiếng Việt
+- **Negation Handling**: Ghép từ phủ định (không, chưa, chẳng) với từ cảm xúc
 - **Stopwords**: 1943 từ tiếng Việt
 - **Tokenization**: underthesea cho ngữ cảnh tiếng Việt
 

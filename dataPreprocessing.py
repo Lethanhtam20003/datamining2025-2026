@@ -104,11 +104,33 @@ def convert_slang(text):
 def tokenize_vietnamese(text):
     """
     Tách từ tiếng Việt bằng thư viện underthesea
-    Ví dụ: 'rất thích sản phẩm' -> 'rất_thích sản_phẩm'
+    Trả về list các từ đã tách
     """
     if not isinstance(text, str):
-        return ""
-    return word_tokenize(text, format="text")
+        return []
+    return word_tokenize(text, format="text").split()
+
+
+def negation_transformation(word_list):
+    """
+    Thực hiện Negation Transformation: ghép từ phủ định với từ đứng sau
+    Ví dụ: ["không", "hài_lòng"] -> ["không_hài_lòng"]
+    """
+    if not word_list:
+        return word_list
+    
+    negation_words = ["không", "chưa", "chẳng", "chả", "chớ", "đừng", "không_thích", "chưa_bao_giờ"]
+    transformed = []
+    i = 0
+    while i < len(word_list):
+        if i < len(word_list) - 1 and word_list[i] in negation_words:
+            # Ghép negation với từ tiếp theo
+            transformed.append(word_list[i] + "_" + word_list[i+1])
+            i += 2  # Bỏ qua từ tiếp theo vì đã ghép
+        else:
+            transformed.append(word_list[i])
+            i += 1
+    return transformed
 
 def remove_stopwords(text):
     """
@@ -165,7 +187,7 @@ def assign_label(row):
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    df = load_data("comments.csv")
+    df = load_data("data/comments.csv")
 
     # 1. Trích xuất đặc trưng Emoji (Phải làm TRƯỚC khi clean_text xóa ký tự đặc biệt)
     df['emoji_pos'] = df['Text'].apply(lambda x: extract_emoji(x, POS_EMOJIS))
@@ -183,15 +205,19 @@ if __name__ == "__main__":
     # Bước b: Làm sạch (Xóa URL, HTML, ký tự đặc biệt...)
     df['cleaned_text'] = df['cleaned_text'].apply(clean_text)
     # Bước c: Tách từ tiếng Việt 
-    df['cleaned_text'] = df['cleaned_text'].apply(tokenize_vietnamese)
-    # Bước d: Loại bỏ Stopwords
-    df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)
+    df['tokenized'] = df['cleaned_text'].apply(tokenize_vietnamese)
+    # Bước d: Xử lý phủ định
+    df['tokenized'] = df['tokenized'].apply(negation_transformation)
+    # Bước e: Ghép lại và loại bỏ Stopwords
+    df['cleaned_text'] = df['tokenized'].apply(lambda x: " ".join(x))
+    # df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)  # Tạm bỏ để test
 
     # 4. Gán nhãn (Labeling)
     df['label'] = df.apply(assign_label, axis=1)
-
+    # Lọc bỏ samples trống sau preprocessing
+    df = df[df['cleaned_text'].str.len() > 0].copy()
     # 5. Vector hóa văn bản bằng TF-IDF
-    tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=2, max_df=0.9)
+    tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1, max_df=1.0)
     X_tfidf = tfidf.fit_transform(df['cleaned_text']).toarray()
 
     # 6. CHUẨN HÓA (NORMALIZATION) - Bước tối ưu quan trọng 
@@ -206,7 +232,7 @@ if __name__ == "__main__":
 
     print("Kích thước đặc trưng cuối cùng:", X_final.shape)
     print("Phân bố nhãn:", df['label'].value_counts())
-    df.to_csv("comments_final_optimized.csv", index=False, encoding='utf-8-sig')    # ================= LABELING HEURISTIC =================
+    df.to_csv("data/comments_final_optimized.csv", index=False, encoding='utf-8-sig')    # ================= LABELING HEURISTIC =================
     POS_WORDS = ["tốt", "hay", "thích", "tuyệt", "love", "good", "nice", "excellent", "tuyệt_vời", "ưng", "ok", "oki"]
     NEG_WORDS = ["tệ", "dở", "ghét", "kém", "bad", "hate", "worst", "terrible", "chán", "buồn", "không_thích"]
     

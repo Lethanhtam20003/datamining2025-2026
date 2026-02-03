@@ -16,7 +16,7 @@ import seaborn as sns
 # Import từ dataPreprocessing
 from dataPreprocessing import (
     load_data, extract_emoji, convert_slang, clean_text,
-    tokenize_vietnamese, remove_stopwords, assign_label,
+    tokenize_vietnamese, negation_transformation, remove_stopwords, assign_label,
     POS_EMOJIS, NEG_EMOJIS, NEU_EMOJIS, STOPWORDS
 )
 
@@ -24,7 +24,7 @@ def prepare_data():
     """
     Chuẩn bị dữ liệu: load, preprocess, vectorize, label
     """
-    df = load_data("comments.csv")
+    df = load_data("data/comments.csv")
 
     # Pipeline tiền xử lý
     df['emoji_pos'] = df['Text'].apply(lambda x: extract_emoji(x, POS_EMOJIS))
@@ -37,14 +37,19 @@ def prepare_data():
 
     df['cleaned_text'] = df['Text'].apply(convert_slang)
     df['cleaned_text'] = df['cleaned_text'].apply(clean_text)
-    df['cleaned_text'] = df['cleaned_text'].apply(tokenize_vietnamese)
-    df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)
+    df['tokenized'] = df['cleaned_text'].apply(tokenize_vietnamese)
+    df['tokenized'] = df['tokenized'].apply(negation_transformation)
+    df['cleaned_text'] = df['tokenized'].apply(lambda x: " ".join(x))
+    # df['cleaned_text'] = df['cleaned_text'].apply(remove_stopwords)  # Tạm bỏ
 
     # Gán nhãn
     df['label'] = df.apply(assign_label, axis=1)
 
+    # Lọc bỏ samples trống
+    df = df[df['cleaned_text'].str.len() > 0].copy()
+
     # Vector hóa
-    tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=2, max_df=0.9)
+    tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1, max_df=1.0)
     X_tfidf = tfidf.fit_transform(df['cleaned_text']).toarray()
 
     scaler = MinMaxScaler()

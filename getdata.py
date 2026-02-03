@@ -7,7 +7,7 @@ DEVELOPER_KEY = "AIzaSyBosShK5z9bqY6OUzmbHZRbxlHSeKYvha4"
 VIDEO_ID = "jy7zUprLph8" 
 
 
-CSV_FILE_NAME = "comments.csv"
+CSV_FILE_NAME = "data/comments.csv"
 # ============================================
 
 def get_all_comments(api_key, video_id):
