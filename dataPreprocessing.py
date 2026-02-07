@@ -37,6 +37,13 @@ SLANG_DICT = {
     "đc": "được", "dc": "được", "r": "rồi", "s": "sao",
     "mn": "mọi người", "ae": "anh em", "mìh": "mình", "mik": "mình",
     "tr": "trời", "j": "gì", "bt": "biết", "kb": "không biết", "h": "giờ",
+    "ip" : "iphone", "đt": "điện thoại", "dt": "điện thoại",
+    "cg": "cũng", "kq": "kết quả", "klq": "không liên quan",
+    "tks": "cảm ơn", "thx": "cảm ơn", "plz": "làm ơn", "pls": "làm ơn",
+    "vl": "vãi lìn", "đ": "đi", "dcj": "được rồi", "z": "dạ",
+    "zui": "vui", "dzui": "vui", "hok": "không", "jz": "gì vậy",
+    "g": "gì", "j": "gì", "kg": "không", "prm": "promax",
+    "brồ mắc": "promax",
     # Từ tiếng Anh biểu cảm -> Tiếng Việt
     "good": "tốt", "great": "tuyệt", "awesome": "tuyệt_vời", "excellent": "xuất_sắc",
     "bad": "tệ", "sucks": "tệ", "terrible": "tồi_tệ", "worst": "tồi_tệ",
@@ -59,6 +66,7 @@ def load_data(file_path):
     df = pd.read_csv(file_path)
     df.dropna(subset=['Text'], inplace=True)
     return df
+
 
 def clean_text(text):
     """
@@ -232,30 +240,31 @@ if __name__ == "__main__":
 
     print("Kích thước đặc trưng cuối cùng:", X_final.shape)
     print("Phân bố nhãn:", df['label'].value_counts())
-    df.to_csv("data/comments_final_optimized.csv", index=False, encoding='utf-8-sig')    # ================= LABELING HEURISTIC =================
+    df.to_csv("data/comments_final_optimized.csv", index=False, encoding='utf-8-sig')    
+    # ================= LABELING HEURISTIC =================
     POS_WORDS = ["tốt", "hay", "thích", "tuyệt", "love", "good", "nice", "excellent", "tuyệt_vời", "ưng", "ok", "oki"]
     NEG_WORDS = ["tệ", "dở", "ghét", "kém", "bad", "hate", "worst", "terrible", "chán", "buồn", "không_thích"]
     
-    def assign_label(row):
-        """
-        Gán nhãn dựa trên heuristic: emoji > từ khóa
-        """
-        # Ưu tiên emoji
-        if row['num_emoji_pos'] > 0:
-            return 1  # Khen
-        elif row['num_emoji_neg'] > 0:
-            return 0  # Chê
-        elif row['num_emoji_neu'] > 0:
-            return 2  # Trung tính
+    # def assign_label(row):
+    #     """
+    #     Gán nhãn dựa trên heuristic: emoji > từ khóa
+    #     """
+    #     # Ưu tiên emoji
+    #     if row['num_emoji_pos'] > 0:
+    #         return 1  # Khen
+    #     elif row['num_emoji_neg'] > 0:
+    #         return 0  # Chê
+    #     elif row['num_emoji_neu'] > 0:
+    #         return 2  # Trung tính
         
-        # Nếu không có emoji, kiểm tra từ khóa
-        text = row['cleaned_text'].lower()
-        if any(word in text for word in POS_WORDS):
-            return 1
-        elif any(word in text for word in NEG_WORDS):
-            return 0
-        else:
-            return 2  # Mặc định trung tính
+    #     # Nếu không có emoji, kiểm tra từ khóa
+    #     text = row['cleaned_text'].lower()
+    #     if any(word in text for word in POS_WORDS):
+    #         return 1
+    #     elif any(word in text for word in NEG_WORDS):
+    #         return 0
+    #     else:
+    #         return 2  # Mặc định trung tính
     
     # Thêm vào pipeline chính:
     df['label'] = df.apply(assign_label, axis=1)    
