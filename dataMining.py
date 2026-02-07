@@ -48,11 +48,13 @@ def prepare_data():
 
     print("\n Vẽ phân bố nhãn trước khi cân bằng dữ liệu")
     print(df['label'].value_counts())
+    plot_label_distribution(df['label'], title="Phân bố nhãn TRƯỚC cân bằng")
 
     # Cân bằng dữ liệu
     df = balance_data(df)
     print("\n Vẽ phân bố nhãn sau khi cân bằng dữ liệu")
     print(df['label'].value_counts())
+    plot_label_distribution(df['label'], title="Phân bố nhãn SAU cân bằng")
 
     # Lọc bỏ samples trống
     df = df[df['cleaned_text'].str.len() > 0].copy()
@@ -72,16 +74,19 @@ def prepare_data():
 
 
 
-def plot_label_distribution(y):
-    """
-    Vẽ biểu đồ phân bố nhãn trong dữ liệu
-    """
-    plt.figure()
+def plot_label_distribution(y, title="Phân bố nhãn"):
+    plt.figure(figsize=(6,4))
     y.value_counts().sort_index().plot(kind='bar')
-    plt.title('Phân bố nhãn trong dữ liệu')
-    plt.xlabel('Label (0 = Chê, 1 = Khen, 2 = Trung tính)')
+
+    plt.title(title)
+    plt.xlabel('Label (0=Chê, 1=Khen, 2=Trung tính)')
     plt.ylabel('Số lượng')
-    plt.savefig('label_distribution.png', dpi=300, bbox_inches='tight')
+
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+
+    filename = title.replace(" ", "_") + ".png"
+    plt.savefig(filename, dpi=300)
     plt.show()
 
 def cross_validate_model(model, X, y):
@@ -214,8 +219,6 @@ if __name__ == "__main__":
     X, y, df, tfidf, scaler = prepare_data()
     print(f"Data shape: {X.shape}")
     print(f"Labels distribution: {y.value_counts()}")
-
-    plot_label_distribution(y) 
 
     # Huấn luyện mô hình
     model, X_train, X_test, y_train, y_test, y_pred = train_naive_bayes(X, y)
