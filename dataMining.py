@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
@@ -45,13 +46,22 @@ def prepare_data():
     # Gán nhãn
     df['label'] = df.apply(assign_label, axis=1)
 
+    print("\n Vẽ phân bố nhãn trước khi cân bằng dữ liệu")
+    print(df['label'].value_counts())
+
+    # Cân bằng dữ liệu
+    df = balance_data(df)
+    print("\n Vẽ phân bố nhãn sau khi cân bằng dữ liệu")
+    print(df['label'].value_counts())
+
     # Lọc bỏ samples trống
     df = df[df['cleaned_text'].str.len() > 0].copy()
 
-    # Vector hóa
+    # Vector hóa TFIDF
     tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1, max_df=1.0)
     X_tfidf = tfidf.fit_transform(df['cleaned_text']).toarray()
 
+    # Chuẩn hóa đặc trưng emoji
     scaler = MinMaxScaler()
     emoji_numeric = df[['num_emoji_pos', 'num_emoji_neg', 'num_emoji_neu']].values
     emoji_scaled = scaler.fit_transform(emoji_numeric)
@@ -59,6 +69,48 @@ def prepare_data():
     X_final = np.hstack([X_tfidf, emoji_scaled])
 
     return X_final, df['label'], df, tfidf, scaler
+
+
+
+def plot_label_distribution(y):
+    """
+    Vẽ biểu đồ phân bố nhãn trong dữ liệu
+    """
+    plt.figure()
+    y.value_counts().sort_index().plot(kind='bar')
+    plt.title('Phân bố nhãn trong dữ liệu')
+    plt.xlabel('Label (0 = Chê, 1 = Khen, 2 = Trung tính)')
+    plt.ylabel('Số lượng')
+    plt.savefig('label_distribution.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+def cross_validate_model(model, X, y):
+    """
+    Đánh giá mô hình bằng phương pháp Cross Validation (K-Fold)
+     Mục đích:
+    - Kiểm tra độ ổn định của mô hình
+    - Tránh overfitting do train/test split ngẫu nhiên
+    - Lấy độ chính xác trung bình qua nhiều lần huấn luyện
+    """
+    scores = cross_val_score(model, X, y, cv=5, scoring='accuracy')
+    print("\nCross Validation Accuracy:", scores)
+    print("Mean accuracy:", scores.mean())
+
+def balance_data(df):
+    """
+      Cân bằng dữ liệu giữa các lớp (0: Chê, 1: Khen, 2: Trung tính)
+      Phương pháp:
+    - Tìm số lượng nhỏ nhất giữa các lớp
+    - Random sampling mỗi lớp theo số lượng đó
+    - Ghép lại thành dataset cân bằng
+    """
+    min_count = df['label'].value_counts().min()
+    dfs = []
+
+    for label in df['label'].unique():
+        dfs.append(df[df['label']==label].sample(min_count, random_state=42))
+
+    return pd.concat(dfs)
 
 def train_naive_bayes(X, y):
     """
@@ -105,6 +157,9 @@ def evaluate_model(y_test, y_pred):
     plt.title('Ma trận nhầm lẫn - Phân tích cảm xúc')
     plt.ylabel('Thực tế')
     plt.xlabel('Dự đoán')
+
+    plt.yticks(rotation=0)  
+    plt.xticks(rotation=0) 
     plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
     plt.show()
 
@@ -117,11 +172,18 @@ def evaluate_model(y_test, y_pred):
     # Các chỉ số tổng thể
     accuracy = accuracy_score(y_test, y_pred)
     f1_macro = f1_score(y_test, y_pred, average='macro')
-    f1_weighted = f1_score(y_test, y_pred, average='weighted')
 
     print(f"Độ chính xác: {accuracy:.2f}")
     print(f"F1 Macro: {f1_macro:.2f}")
-    print(f"F1 Weighted: {f1_weighted:.2f}")
+
+    # ===== CHART SO SÁNH =====
+    plt.figure()
+    plt.bar(["Accuracy", "F1-macro"], [accuracy, f1_macro])
+    plt.ylim(0,1)
+    plt.title("So sánh Accuracy và F1-score")
+    plt.savefig("metrics.png", dpi=300)
+    plt.show()
+
     # Phân tích theo lớp
     print("\n4. PER-CLASS ANALYSIS:")
     for i, label in enumerate(target_names):
@@ -130,7 +192,7 @@ def evaluate_model(y_test, y_pred):
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
         print(f"{label}: Precision={precision:.3f}, Recall={recall:.3f}, F1={f1:.3f}")
 
-    return accuracy, f1_macro, f1_weighted
+    return accuracy, f1_macro
 
 def save_model(model, filename='naive_bayes_model.pkl'):
     """
@@ -153,14 +215,19 @@ if __name__ == "__main__":
     print(f"Data shape: {X.shape}")
     print(f"Labels distribution: {y.value_counts()}")
 
+    plot_label_distribution(y) 
+
     # Huấn luyện mô hình
     model, X_train, X_test, y_train, y_test, y_pred = train_naive_bayes(X, y)
+    cross_validate_model(model, X, y)
 
     # Giai đoạn 5: Đánh giá
-    accuracy, f1_macro, f1_weighted = evaluate_model(y_test, y_pred)
+    accuracy, f1_macro = evaluate_model(y_test, y_pred)
 
     # Lưu mô hình
     save_model(model)
+    joblib.dump(tfidf, "tfidf.pkl")
+    joblib.dump(scaler, "scaler.pkl")
 
     print("\n" + "="*50)
     print("PIPELINE COMPLETED!")
